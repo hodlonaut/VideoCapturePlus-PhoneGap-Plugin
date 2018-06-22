@@ -27,7 +27,6 @@
 
     <!-- ios -->
     <platform name="ios">
-
         <config-file target="config.xml" parent="/*">
             <feature name="VideoCapturePlus">
                 <param name="ios-package" value="VideoCapturePlus"/>
@@ -43,7 +42,6 @@
 
     <!-- android -->
     <platform name="android">
-
         <config-file target="res/xml/config.xml" parent="/*">
             <feature name="VideoCapturePlus">
                 <param name="android-package" value="nl.xservices.plugins.videocaptureplus.VideoCapturePlus"/>
@@ -54,7 +52,10 @@
             <uses-permission android:name="android.permission.RECORD_AUDIO" />
             <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
             <uses-permission android:name="android.permission.CAMERA" />
+        </config-file>
 
+        <!-- the following provider clashes with the camera plugin's provider. relying on its version is sufficient for our purposes.
+        <config-file target="AndroidManifest.xml" parent="application">
             <provider
                     android:name="android.support.v4.content.FileProvider"
                     android:authorities="${applicationId}.provider"
@@ -64,8 +65,8 @@
                         android:name="android.support.FILE_PROVIDER_PATHS"
                         android:resource="@xml/videocaptureplus_provider_paths"/>
             </provider>
-
         </config-file>
+        -->
 
         <source-file src="src/android/nl/xservices/plugins/videocaptureplus/VideoCapturePlus.java"
                      target-dir="src/nl/xservices/plugins/videocaptureplus"/>
