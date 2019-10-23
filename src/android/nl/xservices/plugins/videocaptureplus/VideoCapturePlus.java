@@ -12,11 +12,16 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.support.v4.content.FileProvider;
 import android.util.Log;
 import android.Manifest;
 
+import com.nimbusds.jose.util.IOUtils;
+
+import org.apache.cordova.BuildHelper;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
+import org.apache.cordova.LOG;
 import org.apache.cordova.PluginResult;
 import org.apache.cordova.PermissionHelper;
 
@@ -25,7 +30,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -50,6 +59,9 @@ public class VideoCapturePlus extends CordovaPlugin {
   private boolean frontcamera;                    // optional setting for starting video capture with the frontcamera
   private JSONArray results;                      // The array of results to be returned to the user
 
+  private String applicationId;
+  private CordovaUri videoUri;
+
   @Override
   public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
     this.callbackContext = callbackContext;
@@ -58,6 +70,11 @@ public class VideoCapturePlus extends CordovaPlugin {
     this.highquality = false;
     this.frontcamera = false;
     this.results = new JSONArray();
+
+    //Adding an API to CoreAndroid to get the BuildConfigValue
+    //This allows us to not make this a breaking change to embedding
+    this.applicationId = (String) BuildHelper.getBuildConfigValue(cordova.getActivity(), "APPLICATION_ID");
+    this.applicationId = preferences.getString("applicationId", this.applicationId);
 
     JSONObject options = args.optJSONObject(0);
     if (options != null) {
@@ -126,7 +143,7 @@ public class VideoCapturePlus extends CordovaPlugin {
     File cache;
     if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
       // SD card
-      cache = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/Android/data/" + cordova.getActivity().getPackageName() + "/cache/");
+      cache = cordova.getActivity().getExternalCacheDir();
     } else {
       // internal storage
       cache = cordova.getActivity().getCacheDir();
@@ -141,7 +158,7 @@ public class VideoCapturePlus extends CordovaPlugin {
    * Permissions checks
   */
   private void callCaptureVideo(int duration, boolean highquality, boolean frontcamera) {
-    
+
     String[] missingPermissions = determineMissingPermissions();
 
     if(missingPermissions.length == 0) {
@@ -179,8 +196,15 @@ public class VideoCapturePlus extends CordovaPlugin {
 
   private void captureVideo(int duration, boolean highquality, boolean frontcamera) {
     Intent intent = new Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE);
-    String videoUri = getVideoContentUriFromFilePath(this.cordova.getActivity(), getTempDirectoryPath());
-    intent.putExtra(MediaStore.EXTRA_OUTPUT, videoUri);
+
+    this.videoUri = new CordovaUri(FileProvider.getUriForFile(cordova.getActivity(),
+                    applicationId + ".provider",
+                    createCaptureFile("")));
+    //    String videoUri = getVideoContentUriFromFilePath(this.cordova.getActivity(), getTempDirectoryPath());
+
+    //We can write to this URI, this will hopefully allow us to write files to get to the next step
+    intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+    intent.putExtra(MediaStore.EXTRA_OUTPUT, videoUri.getCorrectUri());
 
     if (highquality) {
       intent.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 1);
@@ -276,13 +300,20 @@ public class VideoCapturePlus extends CordovaPlugin {
         if (data == null) {
           this.fail(createErrorObject(CAPTURE_NO_MEDIA_FILES, "Error: data is null"));
         } else {
-          results.put(createMediaFile(data));
-          if (results.length() >= limit) {
-            // Send Uri back to JavaScript for viewing video
-            this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, results));
-          } else {
-            // still need to capture more video clips
-            callCaptureVideo(duration, highquality, frontcamera);
+          File destFile = createCaptureFile(System.currentTimeMillis() + "");
+          Uri destUri = Uri.fromFile(destFile);
+          try {
+            writeUncompressedImage(this.videoUri.getFileUri(), destUri);
+            results.put(createMediaFile(destFile));
+            if (results.length() >= limit) {
+              // Send Uri back to JavaScript for viewing video
+              this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, results));
+            } else {
+              // still need to capture more video clips
+              callCaptureVideo(duration, highquality, frontcamera);
+            }
+          } catch (IOException ioe) {
+            this.fail(createErrorObject(CAPTURE_NO_MEDIA_FILES, "Error: failed to save video"));
           }
         }
       }
@@ -303,41 +334,27 @@ public class VideoCapturePlus extends CordovaPlugin {
     }
   }
 
-  private JSONObject createMediaFile(final Uri data) {
-    Future<JSONObject> result = cordova.getThreadPool().submit(new Callable<JSONObject>() {
-      @Override
-      public JSONObject call() throws Exception {
-        File fp = webView.getResourceApi().mapUriToFile(data);
-        JSONObject obj = new JSONObject();
-        try {
-          // File properties
-          obj.put("name", fp.getName());
-          obj.put("fullPath", fp.toURI().toString());
-          // Because of an issue with MimeTypeMap.getMimeTypeFromExtension() all .3gpp files
-          // are reported as video/3gpp. I'm doing this hacky check of the URI to see if it
-          // is stored in the audio or video content store.
-          if (fp.getAbsoluteFile().toString().endsWith(".3gp") || fp.getAbsoluteFile().toString().endsWith(".3gpp")) {
-            obj.put("type", VIDEO_3GPP);
-          } else {
-            obj.put("type", FileHelper.getMimeType(Uri.fromFile(fp), cordova));
-          }
-          obj.put("lastModifiedDate", fp.lastModified());
-          obj.put("size", fp.length());
-        } catch (JSONException e) {
-          // this will never happen
-          e.printStackTrace();
-        }
-        return obj;
-      }
-    });
+  private JSONObject createMediaFile(final File fp) {
+    JSONObject obj = new JSONObject();
     try {
-      return result.get();
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-    } catch (ExecutionException e) {
+      // File properties
+      obj.put("name", fp.getName());
+      obj.put("fullPath", fp.toURI().toString());
+      // Because of an issue with MimeTypeMap.getMimeTypeFromExtension() all .3gpp files
+      // are reported as video/3gpp. I'm doing this hacky check of the URI to see if it
+      // is stored in the audio or video content store.
+      if (fp.getAbsoluteFile().toString().endsWith(".3gp") || fp.getAbsoluteFile().toString().endsWith(".3gpp")) {
+        obj.put("type", VIDEO_3GPP);
+      } else {
+        obj.put("type", FileHelper.getMimeType(Uri.fromFile(fp), cordova));
+      }
+      obj.put("lastModifiedDate", fp.lastModified());
+      obj.put("size", fp.length());
+    } catch (JSONException e) {
+      // this will never happen
       e.printStackTrace();
     }
-    return null;
+    return obj;
   }
 
   private JSONObject createErrorObject(int code, String message) {
@@ -353,5 +370,69 @@ public class VideoCapturePlus extends CordovaPlugin {
 
   public void fail(JSONObject err) {
     this.callbackContext.error(err);
+  }
+
+  /**
+   * Create a file in the applications temporary directory.
+   *
+   * @return a File object pointing to the temporary video
+   */
+  private File createCaptureFile(String filename) {
+    String name = (filename == null || filename.isEmpty()) ? ".video" : (filename + ".mp4");
+
+    return new File(getTempDirectoryPath(), name);
+  }
+
+  /**
+   * In the special case where the default width, height and quality are unchanged
+   * we just write the file out to disk saving the expensive Bitmap.compress function.
+   *
+   * @param src
+   * @throws FileNotFoundException
+   * @throws IOException
+   */
+  private void writeUncompressedImage(Uri src, Uri dest) throws FileNotFoundException,
+          IOException {
+
+    FileInputStream fis = new FileInputStream(org.apache.cordova.camera.FileHelper.stripFileProtocol(src.toString()));
+    writeUncompressedImage(fis, dest);
+
+  }
+
+  /**
+   * Write an inputstream to local disk
+   *
+   * @param fis - The InputStream to write
+   * @param dest - Destination on disk to write to
+   * @throws FileNotFoundException
+   * @throws IOException
+   */
+  private void writeUncompressedImage(InputStream fis, Uri dest) throws FileNotFoundException,
+          IOException {
+    OutputStream os = null;
+    try {
+      os = this.cordova.getActivity().getContentResolver().openOutputStream(dest);
+      byte[] buffer = new byte[4096];
+      int len;
+      while ((len = fis.read(buffer)) != -1) {
+        os.write(buffer, 0, len);
+      }
+      os.flush();
+    } finally {
+      if (os != null) {
+        try {
+          os.close();
+        } catch (IOException e) {
+          LOG.d(LOG_TAG, "Exception while closing output stream.");
+        }
+      }
+      if (fis != null) {
+        try {
+          fis.close();
+        } catch (IOException e) {
+          LOG.d(LOG_TAG, "Exception while closing file input stream.");
+        }
+      }
+    }
   }
 }
