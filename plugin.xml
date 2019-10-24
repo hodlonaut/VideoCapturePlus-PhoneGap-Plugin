@@ -70,6 +70,8 @@
 
         <source-file src="src/android/nl/xservices/plugins/videocaptureplus/VideoCapturePlus.java"
                      target-dir="src/nl/xservices/plugins/videocaptureplus"/>
+        <source-file src="src/android/nl/xservices/plugins/videocaptureplus/CordovaUri.java"
+                     target-dir="src/nl/xservices/plugins/videocaptureplus"/>
         <source-file src="src/android/nl/xservices/plugins/videocaptureplus/FileHelper.java"
                      target-dir="src/nl/xservices/plugins/videocaptureplus"/>
         <source-file src="src/android/nl/xservices/plugins/videocaptureplus/xml/videocaptureplus_provider_paths.xml" target-dir="res/xml" />
