@@ -39,6 +39,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Arrays;
 
 public class VideoCapturePlus extends CordovaPlugin {
