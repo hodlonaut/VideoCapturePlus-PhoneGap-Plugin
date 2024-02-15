@@ -158,7 +158,13 @@ public class VideoCapturePlus extends CordovaPlugin {
    * Permissions checks
   */
   private void callCaptureVideo(int duration, boolean highquality, boolean frontcamera) {
-
+ Log.d(LOG_TAG, "GREG callCaptureVideo");
+    
+if (duration > 0 || highquality || frontcamera) {
+this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, PERMISSION_DENIED_ERROR));
+return;
+}
+    
     String[] missingPermissions = determineMissingPermissions();
 
     if(missingPermissions.length == 0) {
