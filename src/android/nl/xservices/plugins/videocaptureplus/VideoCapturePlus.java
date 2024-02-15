@@ -38,6 +38,7 @@ import java.io.OutputStream;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.ArrayList;
 import java.util.Arrays;
 
 public class VideoCapturePlus extends CordovaPlugin {
@@ -182,6 +183,32 @@ return;
    * Sets up an intent to capture video.  Result handled by onActivityResult()
    */
   private String[] determineMissingPermissions() {
+    List<String> permissions = new ArrayList<String>();
+    if (!PermissionHelper.hasPermission(this, Manifest.permission.CAMERA)) {
+      permissions.add(Manifest.permission.CAMERA);
+    }
+
+    if (!PermissionHelper.hasPermission(this, Manifest.permission.RECORD_AUDIO)) {
+      permissions.add(Manifest.permission.RECORD_AUDIO);
+    }
+
+    if (android.os.Build.VERSION.SDK_INT >= 33) { // Build.VERSION_CODES.TIRAMISU) {
+      if (!PermissionHelper.hasPermission(this, "android.permission.READ_MEDIA_IMAGES")) {
+        permissions.add("android.permission.READ_MEDIA_IMAGES");
+      }
+
+      if (!PermissionHelper.hasPermission(this, "android.permission.READ_MEDIA_VIDEO")) {
+        permissions.add("android.permission.READ_MEDIA_VIDEO");
+      }
+    } else {
+      if (!PermissionHelper.hasPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+        permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+      }
+    }
+
+    return permissions.toArray(new String[0]);
+
+/*
     boolean writePermission = PermissionHelper.hasPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
     boolean cameraPermission = PermissionHelper.hasPermission(this, Manifest.permission.CAMERA);
     boolean recordAudioPermission = PermissionHelper.hasPermission(this, Manifest.permission.RECORD_AUDIO);
@@ -202,6 +229,7 @@ return;
     }
 
     return missingPermissions;
+*/
   }
 
 
